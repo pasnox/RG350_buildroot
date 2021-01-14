@@ -307,7 +307,6 @@ define LINUX_INSTALL_TARGET_CMDS
 		$(TARGET_MAKE_ENV) $(MAKE1) $(LINUX_MAKE_FLAGS) -C $(@D) modules_install; \
 		rm -f $(TARGET_DIR)/lib/modules/$(LINUX_VERSION_PROBED)/build ;		\
 		rm -f $(TARGET_DIR)/lib/modules/$(LINUX_VERSION_PROBED)/source ;	\
-		ln -s "$(LINUX_VERSION_PROBED)" "$(TARGET_DIR)/lib/modules/$(LINUX_VERSION_PROBED)" ; \
 		rm -rf output/images/modules.squashfs ; \
 		mksquashfs $(TARGET_DIR)/lib/modules/ \
 			output/images/modules.squashfs -all-root -noappend -no-exports -no-xattrs ; \
