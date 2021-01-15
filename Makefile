@@ -169,6 +169,7 @@ BR_GRAPH_OUT := $(or $(BR2_GRAPH_OUT),pdf)
 BUILD_DIR := $(BASE_DIR)/build
 BINARIES_DIR := $(BASE_DIR)/images
 TARGET_DIR := $(BASE_DIR)/target
+PER_PACKAGE_DIR := $(BASE_DIR)/per-package
 # initial definition so that 'make clean' works for most users, even without
 # .config. HOST_DIR will be overwritten later when .config is included.
 HOST_DIR := $(BASE_DIR)/host
@@ -458,7 +459,7 @@ world: target-post-image
 # dependencies anywhere else
 #
 ################################################################################
-$(BUILD_DIR) $(HOST_DIR) $(BINARIES_DIR) $(LEGAL_INFO_DIR) $(REDIST_SOURCES_DIR_TARGET) $(REDIST_SOURCES_DIR_HOST):
+$(BUILD_DIR) $(HOST_DIR) $(BINARIES_DIR) $(LEGAL_INFO_DIR) $(REDIST_SOURCES_DIR_TARGET) $(REDIST_SOURCES_DIR_HOST) $(PER_PACKAGE_DIR):
 	@mkdir -p $@
 
 # We make a symlink lib32->lib or lib64->lib as appropriate
@@ -482,6 +483,26 @@ $(STAGING_DIR):
 ifeq ($(BR2_ROOTFS_SKELETON_CUSTOM),y)
 TARGET_SKELETON = $(BR2_ROOTFS_SKELETON_CUSTOM_PATH)
 endif
+
+.PHONY: prepare-sdk
+prepare-sdk: world
+	@$(call MESSAGE,"Rendering the SDK relocatable")
+	PER_PACKAGE_DIR=$(PER_PACKAGE_DIR) $(TOPDIR)/support/scripts/fix-rpath host
+	PER_PACKAGE_DIR=$(PER_PACKAGE_DIR) $(TOPDIR)/support/scripts/fix-rpath staging
+	$(INSTALL) -m 755 $(TOPDIR)/support/misc/relocate-sdk.sh $(HOST_DIR)/relocate-sdk.sh
+	mkdir -p $(HOST_DIR)/share/buildroot
+	echo $(HOST_DIR) > $(HOST_DIR)/share/buildroot/sdk-location
+
+BR2_SDK_PREFIX ?= $(GNU_TARGET_NAME)_sdk-buildroot
+.PHONY: sdk
+sdk: prepare-sdk $(BR2_TAR_HOST_DEPENDENCY)
+	@$(call MESSAGE,"Generating SDK tarball")
+	$(if $(BR2_SDK_PREFIX),,$(error BR2_SDK_PREFIX can not be empty))
+	$(Q)mkdir -p $(BINARIES_DIR)
+	$(TAR) czf "$(BINARIES_DIR)/$(BR2_SDK_PREFIX).tar.gz" \
+		--owner=0 --group=0 --numeric-owner \
+		--transform='s#^$(patsubst /%,%,$(HOST_DIR))#$(BR2_SDK_PREFIX)#' \
+		-C / $(patsubst /%,%,$(HOST_DIR))
 
 RSYNC_VCS_EXCLUSIONS = \
 	--exclude .svn --exclude .git --exclude .hg --exclude .bzr \
@@ -632,6 +653,9 @@ endif
 		echo "VERSION_ID=$(BR2_VERSION)"; \
 		echo "PRETTY_NAME=\"Buildroot $(BR2_VERSION)\"" \
 	) >  $(TARGET_DIR)/etc/os-release
+
+	@$(call MESSAGE,"Sanitizing RPATH in target tree")
+	PER_PACKAGE_DIR=$(PER_PACKAGE_DIR) $(TOPDIR)/support/scripts/fix-rpath target
 
 	@$(foreach d, $(call qstrip,$(BR2_ROOTFS_OVERLAY)), \
 		$(call MESSAGE,"Copying overlay $(d)"); \
@@ -852,7 +876,7 @@ printvars:
 clean:
 	rm -rf $(TARGET_DIR) $(BINARIES_DIR) $(HOST_DIR) \
 		$(BUILD_DIR) $(BASE_DIR)/staging \
-		$(LEGAL_INFO_DIR)
+		$(LEGAL_INFO_DIR) $(PER_PACKAGE_DIR)
 
 distclean: clean
 ifeq ($(DL_DIR),$(TOPDIR)/dl)
@@ -871,6 +895,7 @@ help:
 	@echo 'Build:'
 	@echo '  all                    - make world'
 	@echo '  toolchain              - build toolchain'
+	@echo '  sdk                    - build relocatable SDK'
 	@echo '  <package>-rebuild      - force recompile <package>'
 	@echo '  <package>-reconfigure  - force reconfigure <package>'
 	@echo '  <package>-graph-depends    - generate graph of the dependency tree for package'
